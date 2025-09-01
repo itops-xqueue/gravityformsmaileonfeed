@@ -1,0 +1,10 @@
+{
+  "require": {
+    "xqueue/maileon-api-client": "*"
+  },
+  "autoload": {
+    "psr-4": {
+      "Maileon\\": "vendor/xqueue/maileon-api-client/src"
+    }
+  }
+}

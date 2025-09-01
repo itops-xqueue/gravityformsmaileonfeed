@@ -1,0 +1,42 @@
+{
+	"name" : "xqueue/maileon-api-client",
+	"description" : "API-Client to XQ:Maileon",
+	"keywords" : [
+		"XQueue",
+		"Maileon"
+	],
+	"homepage" : "https://www.maileon.de",
+	"type" : "library",
+	"license" : "MIT",
+	"authors" : [{
+			"name" : "XQueue GmbH, Marcus Beckerle",
+			"email" : "marcus.beckerle@xqueue.com"
+		}, {
+			"name" : "XQueue GmbH, Andreas Lange",
+			"email" : "andreas.lange@xqueue.com"
+		}, {
+			"name" : "Wanadis Devs",
+			"email" : "dev@maileon.hu"
+		}
+	],
+	"require" : {
+		"php" : "^7.0|^8.0",
+		"ext-curl" : "*",
+		"ext-mbstring" : "*",
+		"ext-libxml" : "*"
+	},
+	"require-dev" : {
+		"phpunit/phpunit" : "^4",
+		"phpstan/phpstan": "^1.8"
+	},
+	"autoload" : {
+		"psr-4" : {
+			"de\\xqueue\\maileon\\api\\client\\" : "src/"
+		}
+	},
+	"scripts" : {
+		"test" : "phpunit",
+		"check-style" : "phpcs -p --standard=PSR2 src/",
+		"fix-style" : "phpcbf -p --standard=PSR2 src/"
+	}
+}
