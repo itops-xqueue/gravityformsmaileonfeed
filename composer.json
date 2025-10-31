@@ -1,6 +1,7 @@
 {
   "require": {
-    "xqueue/maileon-api-client": "*"
+    "xqueue/maileon-api-client": "*",
+    "ext-json": "*"
   },
   "autoload": {
     "psr-4": {
