@@ -191,8 +191,8 @@ class GFMaileonFeedAddOn extends GFFeedAddOn
         $needsDoi = false;
         $doiKey = '';
 
-
-        if (intval($permission) === 4 || intval($permission) === 5) {
+        // DOI mailing only applies when the permission isn't already a Double Opt-In permission (4 or 5).
+        if (!$this->isDoiPermission($permission)) {
             if (rgar($feed['meta'], 'doi_override') == '1') {
                 $needsDoi = rgar($feed['meta'], 'doi_mailing') == '1';
                 $doiKey = rgar($feed['meta'], 'doi_mailing_key') ?? '';
@@ -715,6 +715,14 @@ class GFMaileonFeedAddOn extends GFFeedAddOn
                 'title' => esc_html__('Configuration', 'gravityformsmaileonfeed'),
                 'fields' => array(
                     array(
+                        'label' => esc_html__('Permission', 'gravityformsmaileonfeed'),
+                        'type' => 'select',
+                        'name' => 'permission',
+                        'tooltip' => esc_html__('Specify the default permission for contacts created by this Add-On.', 'gravityformsmaileonfeed'),
+                        'choices' => $permissionChoices,
+                        'onchange' => 'jQuery(this).parents("form").submit();',
+                    ),
+                    array(
                         'label' => esc_html__('Enable Double Opt-In mailing', 'gravityformsmaileonfeed'),
                         'type' => 'checkbox',
                         'name' => 'doi_mailing',
@@ -726,13 +734,9 @@ class GFMaileonFeedAddOn extends GFFeedAddOn
                                 'value' => true,
                             ),
                         ),
-                    ),
-                    array(
-                        'label' => esc_html__('Permission', 'gravityformsmaileonfeed'),
-                        'type' => 'select',
-                        'name' => 'permission',
-                        'tooltip' => esc_html__('Specify the default permission for contacts created by this Add-On.', 'gravityformsmaileonfeed'),
-                        'choices' => $permissionChoices,
+                        'dependency' => function () {
+                            return !$this->isDoiPermission($this->get_setting('permission'));
+                        },
                     ),
                     array(
                         'name' => 'doi_mailing_key',
@@ -740,6 +744,9 @@ class GFMaileonFeedAddOn extends GFFeedAddOn
                         'label' => esc_html__('Double Opt-In mailing key', 'gravityformsmaileonfeed'),
                         'type' => 'text',
                         'class' => 'small',
+                        'dependency' => function () {
+                            return !$this->isDoiPermission($this->get_setting('permission'));
+                        },
                     ),
                 ),
             ),
@@ -778,6 +785,20 @@ class GFMaileonFeedAddOn extends GFFeedAddOn
             default:
                 return $field;
         };
+    }
+
+
+    /**
+     * Permissions 4 (Double Opt-In) and 5 (Double Opt-In+) already imply double opt-in consent,
+     * so the DOI mailing settings don't apply to them.
+     *
+     * @param mixed $permission
+     *
+     * @return bool
+     */
+    private function isDoiPermission($permission): bool
+    {
+        return in_array((string)$permission, ['4', '5'], true);
     }
 
 

@@ -89,7 +89,15 @@ class MaileonService extends GFFeedAddOn
 			$this->checkCustomFields($contact->custom_fields);
 		}
 
-		if ($this->contactExistsWithValidPermission($contact->email)) {
+		$existingPermission = $this->getPermissionCodeOfExistingContact($contact->email);
+
+		// Maileon already refuses to downgrade permission 4/5 to anything else, and SOI/COI to
+		// "none", but it does allow 5 -> 4, which is still a downgrade we don't want, so guard it here.
+		if ($existingPermission === 5 && $contact->permission->getCode() === 4) {
+			$contact->permission = Permission::getPermission(5);
+		}
+
+		if (in_array($existingPermission, [4, 5], true)) {
 			$needDOIProcess = false;
 			$DOIKey         = '';
 		} else {
@@ -124,36 +132,20 @@ class MaileonService extends GFFeedAddOn
 	}
 
 	/**
-	 * Check the contact exist with valid permission at Maileon
+	 * Get the permission code of an existing contact at Maileon, or -1 if the contact doesn't
+	 * exist or the lookup fails.
 	 */
-	public function contactExistsWithValidPermission(string $email): bool
+	public function getPermissionCodeOfExistingContact(string $email)
 	{
 		try {
 			$response = $this->contactsService->getContactByEmail($email);
-			if ($response->getStatusCode() !== 404) {
-				$contact    = $response->getResult();
-				$permission = $contact->permission->getCode();
 
-				$valid_codes = [2, 3, 4, 5];
-
-				if (in_array($permission, $valid_codes)) {
-					return true;
-				}
-			}
-
-			return false;
+			return $response->isSuccess() ? $response->getResult()->permission->getCode() : -1;
 		} catch (MaileonAPIException $e) {
 			$this->log_error($e->getMessage());
 
-			return false;
+			return -1;
 		}
-	}
-
-	public function getPermissionCodeOfExistingContact(string $email)
-	{
-		$response = $this->contactsService->getContactByEmail($email);
-
-		return $response->isSuccess() ? $response->getResult()->permission->getCode() : -1;
 	}
 
 	public function syncContacts(Contacts $contacts): bool

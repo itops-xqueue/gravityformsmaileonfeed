@@ -3,7 +3,7 @@
 Plugin Name: Maileon Add-On for Gravity Forms
 Plugin URI: http://www.gravityforms.com
 Description: A simple add-on to connect your WordPress site to Maileon
-Version: 2.0
+Version: 2.0.1
 Requires PHP: 7.4
 Author: Maileon
 Author URI: https://www.maileon.hu
@@ -26,7 +26,7 @@ along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 */
 
-define( 'GF_MAILEON_FEED_ADDON_VERSION', '2.0' );
+define( 'GF_MAILEON_FEED_ADDON_VERSION', '2.0.1' );
 
 add_action( 'gform_loaded', array( 'GF_Maileon_Feed_AddOn_Bootstrap', 'load' ), 5 );
 
@@ -36,6 +36,7 @@ class GF_Maileon_Feed_AddOn_Bootstrap {
 	public static function load() {
 
 		if ( ! method_exists( 'GFForms', 'include_feed_addon_framework' ) ) {
+
 			return;
 		}
 
