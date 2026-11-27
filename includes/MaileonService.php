@@ -50,6 +50,25 @@ class MaileonService extends GFFeedAddOn
 	}
 
 	/**
+	 * This class has no add-on slug of its own, so Gravity Forms would drop its log messages.
+	 * Write them to the Maileon add-on's log instead.
+	 *
+	 * @param string $message
+	 */
+	public function log_error($message)
+	{
+		GFMaileonFeedAddOn::get_instance()->log_error(is_scalar($message) ? (string) $message : json_encode($message));
+	}
+
+	/**
+	 * @param string $message
+	 */
+	public function log_debug($message)
+	{
+		GFMaileonFeedAddOn::get_instance()->log_debug(is_scalar($message) ? (string) $message : json_encode($message));
+	}
+
+	/**
 	 * Check the Maileon API key is valid or not
 	 */
 
@@ -82,9 +101,6 @@ class MaileonService extends GFFeedAddOn
 	 */
 	public function subscribeContactToMaileon(Contact $contact, bool $justTransaction, bool $needsDoi, string $doiKey)
 	{
-		$settings = GFAddOn::get_plugin_settings();
-		print_r($settings);
-		$this->log_debug(json_encode($settings));
 		if (! empty($contact->custom_fields)) {
 			$this->checkCustomFields($contact->custom_fields);
 		}
@@ -195,15 +211,38 @@ class MaileonService extends GFFeedAddOn
 		];
 	}
 
-	public function getCustomFields()
+	/**
+	 * Get the custom contact fields defined in Maileon, keyed by field name.
+	 *
+	 * Always returns an array: on PHP 8+, a non-array here (e.g. after a 401/403/429) would make
+	 * the feed settings page fatal.
+	 *
+	 * @return array
+	 */
+	public function getCustomFields(): array
 	{
-		$customFields = $this->contactsService->getCustomFields();
-		if ($customFields->isSuccess()) {
+		try {
+			$response = $this->contactsService->getCustomFields();
+		} catch (\Throwable $e) {
+			$this->log_error(__METHOD__ . ' - ' . $e->getMessage());
 
-			return (array) json_decode(json_encode($customFields->getResult()->custom_fields), true);
+			return [];
 		}
 
-		return [];
+		if (! $response->isSuccess()) {
+			$this->logFailedResponse(__METHOD__, $response);
+
+			return [];
+		}
+
+		$result = $response->getResult();
+		if (! is_object($result) || ! isset($result->custom_fields)) {
+			return [];
+		}
+
+		$customFields = json_decode(json_encode($result->custom_fields), true);
+
+		return is_array($customFields) ? $customFields : [];
 	}
 
 
@@ -213,15 +252,20 @@ class MaileonService extends GFFeedAddOn
 	public function checkCustomFields(array $customFields): bool
 	{
 		try {
-			$customFieldsResponse    = $this->contactsService->getCustomFields();
-			$customFieldsFromMaileon = $customFieldsResponse->getResult();
-		} catch (MaileonAPIException $e) {
-
-			$this->log_error($e->getMessage());
+			$customFieldsResponse = $this->contactsService->getCustomFields();
+		} catch (\Throwable $e) {
+			$this->log_error(__METHOD__ . ' - ' . $e->getMessage());
 
 			return false;
 		}
 
+		$customFieldsFromMaileon = $customFieldsResponse->getResult();
+		if (! $customFieldsResponse->isSuccess() || ! is_object($customFieldsFromMaileon) || ! is_array($customFieldsFromMaileon->custom_fields ?? null)) {
+			// Without the existing field list we can't tell which fields are missing, so don't create any.
+			$this->logFailedResponse(__METHOD__, $customFieldsResponse);
+
+			return false;
+		}
 
 		foreach ($customFields as $fieldName => $fieldValue) {
 			if (! array_key_exists($fieldName, $customFieldsFromMaileon->custom_fields)) {
@@ -324,8 +368,7 @@ class MaileonService extends GFFeedAddOn
 			return false;
 		}
 		if (! $response->isSuccess()) {
-
-			$this->log_error($response->getBodyData());
+			$this->logFailedResponse(__METHOD__, $response);
 
 			return false;
 		}
@@ -335,32 +378,81 @@ class MaileonService extends GFFeedAddOn
 
 
 	/**
-	 * Get available transaction types
+	 * Get available transaction types.
+	 *
+	 * Always returns an array: on a 401/403/429 the API client returns false or the raw body,
+	 * which made array_unshift() in the feed settings fatal on PHP 8+.
+	 *
+	 * @return array
 	 */
-	public function getTransactionTypes()
+	public function getTransactionTypes(): array
 	{
 		try {
-			$response = $this->transactionsService->getTransactionTypes(1,200);
-
-			return $response->getResult();
-		} catch (MaileonAPIException $e) {
-			$this->log_error($e);
+			$response = $this->transactionsService->getTransactionTypes(1, 200);
+		} catch (\Throwable $e) {
+			$this->log_error(__METHOD__ . ' - ' . $e->getMessage());
 
 			return [];
 		}
+
+		if (! $response->isSuccess()) {
+			$this->logFailedResponse(__METHOD__, $response);
+
+			return [];
+		}
+
+		$result = $response->getResult();
+
+		return is_array($result) ? $result : [];
 	}
 
+	/**
+	 * Get a transaction type by name, or null if it can't be fetched.
+	 *
+	 * @return object|null
+	 */
 	public function getTransactionTypeByName($transactionTypeName)
 	{
 		try {
 			$response = $this->transactionsService->getTransactionTypeByName($transactionTypeName);
+		} catch (\Throwable $e) {
+			$this->log_error(__METHOD__ . ' - ' . $e->getMessage());
 
-			return $response->getResult();
-		} catch (MaileonAPIException $e) {
-			$this->log_error($e);
-
-			return [];
+			return null;
 		}
+
+		if (! $response->isSuccess()) {
+			$this->logFailedResponse(__METHOD__, $response);
+
+			return null;
+		}
+
+		$result = $response->getResult();
+
+		return is_object($result) ? $result : null;
+	}
+
+	/**
+	 * Log a non-successful API response with its HTTP status, so permission problems
+	 * (e.g. an API key without access to transactions) show up in the add-on log.
+	 *
+	 * @param string $method
+	 * @param mixed  $response MaileonAPIResult
+	 */
+	private function logFailedResponse(string $method, $response): void
+	{
+		$status = is_object($response) && method_exists($response, 'getStatusCode') ? $response->getStatusCode() : 'n/a';
+		$body   = is_object($response) && method_exists($response, 'getBodyData') ? (string) $response->getBodyData() : '';
+
+		$hint = in_array((int) $status, [401, 403], true) ? ' Check that the API key is valid and has permission for this resource.' : '';
+
+		$this->log_error(sprintf(
+			'%s - Maileon API request failed (HTTP %s).%s %s',
+			$method,
+			$status,
+			$hint,
+			substr($body, 0, 500)
+		));
 	}
 
 

@@ -109,76 +109,16 @@ class GFMaileonFeedAddOn extends GFFeedAddOn
         $permission = $feed['meta']['permission'] != '' ? $feed['meta']['permission'] : rgar($settings, 'permission');
 
 
-        $standardContactFields = [];
-        foreach ($standardContactFieldMeta as $key => $value) {
-            if (!isset($entry[$value['value']]) || $entry[$value['value']] == '') {
-                switch ($value['value']) {
-                    case 'form_title':
-                        $standardContactFields[$value['key']] = $form['title'] ?? "";
-                        break;
-                    case 'id':
-                        $standardContactFields[$value['key']] = $entry['id'] ?? "";
-                        break;
-                    case 'date_created':
-                        $standardContactFields[$value['key']] = $entry['date_created'] ?? "";
-                        break;
-                    case 'ip':
-                        $standardContactFields[$value['key']] = $entry['ip'] ?? "";
-                        break;
-                    case 'source_url':
-                        $standardContactFields[$value['key']] = $entry['source_url'] ?? "";
-                        break;
-                    default:
-                        break;
-                }
-                continue;
-            }
-
-            if (!isset($entry[$value['value']]) || $entry[$value['value']] == '') {
-                continue;
-            }
-            $fieldKey = $value['key'];
-            $standardContactFields[StandardContactField::$$fieldKey] = $entry[$value['value']];
-        }
+        // Standard contact fields are sent as text, as before.
+        $standardContactFields = $this->mapFieldValues((array)$standardContactFieldMeta, $form, $entry, function () {
+            return '';
+        });
 
         $maileon = new MaileonService(['maileon_api_key' => $this->get_plugin_setting('maileon_api_key')]);
         $customFields = $maileon->getCustomFields();
-        $customContactFields = [];
-        foreach ($customContactFieldMeta as $key => $value) {
-
-            $customKey = $value['key'] == "gf_custom" ? $value['custom_key'] : $value['key'];
-
-
-            if (!isset($entry[$value['value']]) || $entry[$value['value']] == '') {
-                switch ($value['value']) {
-                    case 'form_title':
-                        $customContactFields[$value['key']] = $form['title'] ?? "";
-                        break;
-                    case 'id':
-                        $customContactFields[$value['key']] = $entry['id'] ?? "";
-                        break;
-                    case 'date_created':
-                        $customContactFields[$value['key']] = $entry['date_created'] ?? "";
-                        break;
-                    case 'ip':
-                        $customContactFields[$value['key']] = $entry['ip'] ?? "";
-                        break;
-                    case 'source_url':
-                        $customContactFields[$value['key']] = $entry['source_url'] ?? "";
-                        break;
-                    default:
-                        break;
-                }
-                continue;
-            }
-
-
-            if (!isset($customFields[$value['key']])) {
-                $customContactFields[$customKey] = $this->convertType($entry[$value['value']], '');
-                continue;
-            }
-            $customContactFields[$customKey] = $this->convertType($entry[$value['value']], $customFields[$value['key']][0]);
-        }
+        $customContactFields = $this->mapFieldValues((array)$customContactFieldMeta, $form, $entry, function ($maileonKey) use ($customFields) {
+            return $customFields[$maileonKey][0] ?? '';
+        });
 
         $contact = new Contact();
         $contact->email = $email;
@@ -229,33 +169,9 @@ class GFMaileonFeedAddOn extends GFFeedAddOn
         $typeMap = $this->getTransactionFieldsByName($transactionType, $maileon);
 //		$this->log_debug( json_encode( $typeMap ) );
 
-        $transactionFields = [];
-        foreach ($transactionFieldMeta as $key => $value) {
-
-            if (!isset($entry[$value['value']]) || $entry[$value['value']] == '') {
-                switch ($value['value']) {
-                    case 'form_title':
-                        $transactionFields[$value['key']] = $form['title'] ?? "";
-                        break;
-                    case 'id':
-                        $transactionFields[$value['key']] = $entry['id'] ?? "";
-                        break;
-                    case 'date_created':
-                        $transactionFields[$value['key']] = $entry['date_created'] ?? "";
-                        break;
-                    case 'ip':
-                        $transactionFields[$value['key']] = $entry['ip'] ?? "";
-                        break;
-                    case 'source_url':
-                        $transactionFields[$value['key']] = $entry['source_url'] ?? "";
-                        break;
-                    default:
-                        break;
-                }
-                continue;
-            }
-            $transactionFields[$value['key']] = $this->convertType($entry[$value['value'] ?? ""], $typeMap[$value['key']]);
-        }
+        $transactionFields = $this->mapFieldValues((array)$transactionFieldMeta, $form, $entry, function ($maileonKey) use ($typeMap) {
+            return $typeMap[$maileonKey] ?? '';
+        });
 
         $transaction = new Transaction;
         $transaction->contact = $contact;
@@ -383,7 +299,12 @@ class GFMaileonFeedAddOn extends GFFeedAddOn
         $standardContactFields = $maileon->getStandardFields();
 
 
+        // Converts the API objects to plain stdClass objects. Guarded because array_unshift() on a
+        // non-array is a fatal TypeError on PHP 8+ (SI-525).
         $transactionTypes = json_decode(json_encode($maileon->getTransactionTypes()));
+        if (!is_array($transactionTypes)) {
+            $transactionTypes = [];
+        }
         array_unshift($transactionTypes, []);
 
 
@@ -569,6 +490,7 @@ class GFMaileonFeedAddOn extends GFFeedAddOn
                                                 if (in_array($field->type->value, [
                                                     'string',
                                                     'integer',
+                                                    'float',
                                                     'double',
                                                     'boolean',
                                                     'date',
@@ -771,20 +693,137 @@ class GFMaileonFeedAddOn extends GFFeedAddOn
     }
 
 
+    /**
+     * Read the mapped Gravity Forms values and convert them to the Maileon field types.
+     *
+     * Uses Gravity Forms' own get_field_value(), so multi-input fields mapped as a whole
+     * (full name, full address, all checked checkboxes, list) and entry meta (entry ID, date,
+     * IP, source URL, form title) are resolved the way Gravity Forms formats them.
+     * Empty values are skipped.
+     *
+     * @param array    $map    generic_map rows: ['key' => Maileon field, 'custom_key' => ..., 'value' => GF field id]
+     * @param array    $form
+     * @param array    $entry
+     * @param callable $typeOf returns the Maileon type for a Maileon field name
+     *
+     * @return array Maileon field name => converted value
+     */
+    private function mapFieldValues(array $map, $form, $entry, callable $typeOf): array
+    {
+        $values = [];
+        foreach ($map as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $maileonKey = rgar($row, 'key') === 'gf_custom' ? rgar($row, 'custom_key') : rgar($row, 'key');
+            $fieldId = (string)rgar($row, 'value');
+            if ($maileonKey === null || $maileonKey === '' || $fieldId === '') {
+                continue;
+            }
+
+            $value = $this->get_field_value($form, $entry, $fieldId);
+            if (is_array($value)) {
+                $value = implode(', ', array_filter(array_map('strval', $value), 'strlen'));
+            }
+            if ($value === null || $value === '') {
+                continue;
+            }
+
+            $converted = $this->convertType($value, $typeOf($maileonKey));
+            if ($converted === null) {
+                $this->log_error(sprintf('Value of form field %s can\'t be converted for Maileon field "%s" (%s); field skipped.', $fieldId, $maileonKey, $typeOf($maileonKey)));
+                continue;
+            }
+            $values[$maileonKey] = $converted;
+        }
+
+        return $values;
+    }
+
+    /**
+     * Convert a form value to the type Maileon expects. Maileon rejects the whole transaction
+     * when a number is sent as a string, so numeric types are always sent as numbers.
+     *
+     * @param mixed  $field
+     * @param string $type Maileon type: string, integer, float, double, boolean, date, timestamp
+     *
+     * @return mixed the converted value, or null if it can't be converted (the field is then skipped)
+     */
     private function convertType($field, $type)
     {
         switch ($type) {
             case 'boolean':
-                return $field == true;
+                if (is_bool($field)) {
+                    return $field;
+                }
+
+                return !in_array(strtolower(trim((string)$field)), ['', '0', 'false', 'no', 'off', 'n'], true);
             case 'integer':
-                return intval($field);
+                // Non-numeric input becomes 0, as before.
+                return (int)$this->toNumber($field);
+            case 'float':
             case 'double':
-                return (float)round($field, (strlen($field) - strpos($field, '.') - strpos($field, ',')));
+                // round() on a non-numeric string (e.g. "12,5") was a fatal TypeError on PHP 8+ (SI-525).
+                return $this->toNumber($field);
+            case 'date':
+                $timestamp = $this->toTimestamp($field);
+
+                return $timestamp === null ? null : gmdate('Y-m-d', $timestamp);
+            case 'timestamp':
+                $timestamp = $this->toTimestamp($field);
+
+                return $timestamp === null ? null : gmdate('Y-m-d H:i:s', $timestamp);
             case 'string':
                 return (string)$field;
             default:
                 return $field;
-        };
+        }
+    }
+
+    /**
+     * Parse a number the way Gravity Forms does, using the site's currency format
+     * ("1.234,56" for EUR, "1,234.56" for USD). Non-numeric input becomes 0.0.
+     *
+     * @param mixed $field
+     *
+     * @return float
+     */
+    private function toNumber($field): float
+    {
+        if (is_int($field) || is_float($field)) {
+            return (float)$field;
+        }
+        $text = trim((string)$field);
+        if (is_numeric($text)) {
+            return (float)$text;
+        }
+        if (class_exists('GFCommon')) {
+            $number = GFCommon::to_number($text);
+
+            return $number === false ? 0.0 : (float)$number;
+        }
+        $text = str_replace(',', '.', $text);
+
+        return is_numeric($text) ? (float)$text : 0.0;
+    }
+
+    /**
+     * Parse a date or date-time value. Gravity Forms stores dates as Y-m-d and the entry date as
+     * "Y-m-d H:i:s" (UTC); values without a recognizable date (e.g. a time field) return null.
+     *
+     * @param mixed $field
+     *
+     * @return int|null
+     */
+    private function toTimestamp($field)
+    {
+        $text = trim((string)$field);
+        if (!preg_match('/\d{4}/', $text)) {
+            return null;
+        }
+        $timestamp = strtotime($text . (preg_match('/^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}(:\d{2})?)?$/', $text) ? ' UTC' : ''));
+
+        return $timestamp === false ? null : $timestamp;
     }
 
 
@@ -831,6 +870,11 @@ class GFMaileonFeedAddOn extends GFFeedAddOn
 //		$this->log_debug( 'transactionType ' . json_encode( $transactionTypeFields ) );
 
         $typeMap = [];
+        if (!is_object($transactionTypeFields) || !is_iterable($transactionTypeFields->attributes ?? null)) {
+            $this->log_error('Could not load the attributes of transaction type "' . $transactionType . '".');
+
+            return $typeMap;
+        }
         foreach ($transactionTypeFields->attributes as $transactionTypeField) {
             $typeMap[$transactionTypeField->name] = $transactionTypeField->type->value;
         }
@@ -852,6 +896,9 @@ class GFMaileonFeedAddOn extends GFFeedAddOn
             ),
         );
         foreach ($transactionTypes as $transactionType) {
+            if (!is_object($transactionType) || !isset($transactionType->name)) {
+                continue;
+            }
             $options[] = array(
                 'label' => esc_html($transactionType->name),
             );
