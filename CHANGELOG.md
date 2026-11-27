@@ -14,6 +14,8 @@ All notable changes to the Maileon Add-On for Gravity Forms are documented here.
 - Errors from Maileon API requests (contact, custom field, transaction type and transaction calls) now reach the add-on log with the HTTP status and Maileon's message. They were previously dropped.
 - Removed debug output that printed the add-on settings, including the API key, during form submission.
 - Custom contact fields are no longer auto-created when the list of existing fields can't be loaded from Maileon.
+- The add-on can now be installed with Composer as `xqueue/gravityformsmaileonfeed` (type `wordpress-plugin`); see the README. On Composer-managed sites it uses the Maileon API client from the site's dependencies (tested with 1.9.12 and 1.25.7), otherwise the bundled one.
+- Fixed a PHP 8.2+ deprecation notice ("Creation of dynamic property … Contact::$subscribtionPage") with newer Maileon API clients.
 - Still compatible with PHP 7.4 and newer.
 
 ## 2.0.1

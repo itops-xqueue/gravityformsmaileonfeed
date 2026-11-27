@@ -13,7 +13,9 @@ use de\xqueue\maileon\api\client\contacts\StandardContactField;
 use de\xqueue\maileon\api\client\transactions\Transaction;
 
 
-if (file_exists(plugin_dir_path(__FILE__) . '/vendor/autoload.php')) {
+// When the site installs this plugin with Composer, the Maileon client is already loaded by the
+// site's autoloader; only fall back to the bundled copy (zip installs) when it isn't.
+if (!class_exists('de\xqueue\maileon\api\client\contacts\ContactsService') && file_exists(plugin_dir_path(__FILE__) . '/vendor/autoload.php')) {
     require_once plugin_dir_path(__FILE__) . '/vendor/autoload.php';
 }
 
@@ -125,7 +127,6 @@ class GFMaileonFeedAddOn extends GFFeedAddOn
         $contact->standard_fields = $standardContactFields;
         $contact->custom_fields = $customContactFields;
         $contact->permission = Permission::getPermission(intval($permission));
-        $contact->subscribtionPage = $feedName;
 
 
         $needsDoi = false;
@@ -144,7 +145,7 @@ class GFMaileonFeedAddOn extends GFFeedAddOn
         }
 
 
-        $newContact = $maileon->subscribeContactToMaileon($contact, false, $needsDoi, $doiKey);
+        $newContact = $maileon->subscribeContactToMaileon($contact, false, $needsDoi, $doiKey, (string)$feedName);
 
         if (!$newContact) {
             $this->log_error($newContact);

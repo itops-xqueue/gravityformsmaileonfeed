@@ -1,11 +1,20 @@
 {
+  "name": "xqueue/gravityformsmaileonfeed",
+  "description": "Maileon Add-On for Gravity Forms: sends Gravity Forms submissions to Maileon as contacts and transactions.",
+  "type": "wordpress-plugin",
+  "license": "GPL-2.0-or-later",
+  "homepage": "https://github.com/itops-xqueue/gravityformsmaileonfeed",
+  "keywords": ["wordpress", "gravity forms", "maileon", "newsletter"],
   "require": {
-    "xqueue/maileon-api-client": "*",
-    "ext-json": "*"
+    "php": ">=7.4",
+    "ext-curl": "*",
+    "ext-json": "*",
+    "composer/installers": "^1.0 || ^2.0",
+    "xqueue/maileon-api-client": "^1.9.12"
   },
-  "autoload": {
-    "psr-4": {
-      "Maileon\\": "vendor/xqueue/maileon-api-client/src"
+  "config": {
+    "allow-plugins": {
+      "composer/installers": true
     }
   }
 }

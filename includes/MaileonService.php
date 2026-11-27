@@ -99,7 +99,11 @@ class MaileonService extends GFFeedAddOn
 	/**
 	 * Create the Contact at Maileon
 	 */
-	public function subscribeContactToMaileon(Contact $contact, bool $justTransaction, bool $needsDoi, string $doiKey)
+	/**
+	 * @param string $subscriptionPage sent to Maileon as the subscription page (the feed name). Passed
+	 *                                 separately because newer API clients don't allow extra properties on Contact.
+	 */
+	public function subscribeContactToMaileon(Contact $contact, bool $justTransaction, bool $needsDoi, string $doiKey, string $subscriptionPage = '')
 	{
 		if (! empty($contact->custom_fields)) {
 			$this->checkCustomFields($contact->custom_fields);
@@ -133,7 +137,7 @@ class MaileonService extends GFFeedAddOn
 				$contact,
 				SynchronizationMode::$UPDATE,
 				'GravityForms',
-				$contact->subscribtionPage,
+				$subscriptionPage,
 				$needDOIProcess,
 				$needDOIProcess,
 				$DOIKey
